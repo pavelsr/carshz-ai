@@ -1,0 +1,309 @@
+#!/usr/bin/env python3
+import os
+import sys
+import json
+import shlex
+import docker
+import asyncio
+import argparse
+import datetime
+#import logging
+import pandas as pd
+import oyaml as yaml
+
+'''
+Что это? Cкрипт для тестирования неросетей для удаления фона с фотографии
+
+Список конкретных проектов для тестирования задается в файле conf.yaml
+
+Отличие от rmbgtst1 в асинхронности запуска
+'''
+
+#logging.basicConfig(level=logging.DEBUG)
+MAX_CONCURRENT_CONTAINERS = 2
+cnfdict = { "results_folder": "results" }
+client = docker.from_env()
+
+# Build docker run command
+def generate_docker_run_command(config):
+    command = ["docker", "run"]
+    if "container_name" in config:
+        command.extend(["--name", config["container_name"]])
+
+    if "volumes" in config:
+        for host_path, volume_config in config["volumes"].items():
+            bind = volume_config["bind"]
+            mode = volume_config.get("mode", "rw")
+            command.extend(["-v", f"{host_path}:{bind}:{mode}"])
+
+    if "working_dir" in config:
+        command.extend(["-w", config["working_dir"]])
+
+    command.append(config["image"])
+
+    if "command" in config:
+        command.extend(shlex.split(config["command"]))  # Use shlex.split to handle complex commands
+
+    return " ".join(shlex.quote(arg) for arg in command)
+
+
+
+def get_docker_tasks():
+    current_working_directory = os.getcwd()
+    with open("conf.yaml") as stream:
+        try:
+            cnfdict = yaml.safe_load(stream)
+            #print(json.dumps(cnfdict, indent=4))
+            projects = cnfdict["projects"]
+            result = []
+            for proj_id, project in projects.items():
+                if "models" in project and project["models"]:
+                    for model_id in project["models"]:
+                        cmd = project["cmd"].format(
+                            samples_folder = cnfdict["samples_folder"],
+                            results_folder = cnfdict["results_folder"],
+                            proj_id = proj_id,
+                            model_id = model_id 
+                            )
+                        
+                        # Create subfolder in results if it not exists
+                        # {results_folder}/{proj_id}/{model_id}
+                        results_subfolder = "{results_folder}/{proj_id}/{model_id}".format(
+                            results_folder = cnfdict["results_folder"],
+                            proj_id = proj_id,
+                            model_id = model_id
+                        )
+                        os.makedirs(results_subfolder, exist_ok=True)
+
+                        container_name = "{}_{}".format(proj_id,model_id)
+                        task = {
+                            "project_id": proj_id,
+                            "model_id": model_id,
+                            "task_id": "{}.{}".format(proj_id, model_id),
+                            "image": project["image"],
+                            "container_name": container_name,
+                            "command": cmd,
+                            "working_dir": cnfdict["wbdir"],
+                            "volumes": { current_working_directory: {'bind': cnfdict["wbdir"], 'mode': 'rw'}},
+                            "github": project["github"],
+                            "pypi": project["pypi"]
+                        }
+                        task["task_stat_file"] = "{}/{}.json".format(cnfdict["results_folder"], task["task_id"])
+                        
+                        image_size_bytes = client.images.get(project["image"]).attrs['Size']
+                        task["image_size_mb"] = image_size_bytes / (1024 * 1024)
+                        task["image_size_mb"] = int(task["image_size_mb"])
+
+                        result.append(task)
+                else:
+                    print("⚠️ Project {} has no models to test".format(proj_id))
+            return result
+        except yaml.YAMLError as exc:
+            print(exc)
+
+
+async def monitor_container(container, verbose=True, round2int=True):
+    from docker.models.containers import Container
+    if not isinstance(container, Container):
+        raise TypeError("The input must be a docker.models.containers.Container object.")
+
+
+    # client = docker.from_env()
+    # try:
+    #     container = client.containers.get(container_name)
+    # except docker.errors.NotFound:
+    #     print(f"Container {container_name} not found.")
+    #     return
+
+    # print(f"Monitoring container: {container_name}")
+
+    container.reload()
+
+    max_cpu_percentage = 0
+    max_memory_usage = 0
+    total_cpu_usage = 0  # Accumulating CPU usage over time
+    total_time = 0       # Accumulating time intervals
+    
+    while container.status == "running":
+        stats = container.stats(stream=False)
+
+        # Ensure the required keys exist in the stats dictionary
+        cpu_stats = stats.get('cpu_stats', {})
+        precpu_stats = stats.get('precpu_stats', {})
+
+        if 'cpu_usage' in cpu_stats and 'cpu_usage' in precpu_stats and 'system_cpu_usage' in cpu_stats and 'system_cpu_usage' in precpu_stats:
+            # Calculate CPU usage
+            cpu_delta = cpu_stats['cpu_usage']['total_usage'] - precpu_stats['cpu_usage']['total_usage']
+            system_delta = cpu_stats['system_cpu_usage'] - precpu_stats['system_cpu_usage']
+            num_cpus = cpu_stats.get('online_cpus', 1)  # Default to 1 CPU if the key is missing
+            cpu_percentage = (cpu_delta / system_delta) * num_cpus * 100 if system_delta > 0 else 0
+
+            # Accumulate CPU usage and time interval
+            total_cpu_usage += cpu_percentage
+            total_time += 1  # Increment time interval by 1 second
+            
+            # Get memory usage
+            mem_usage = stats['memory_stats']['usage'] / 1024 / 1024  # Convert to MB
+
+            if verbose == True:
+                print(f"{container.name} CPU Usage: {cpu_percentage:.2f}%, Memory Usage: {mem_usage:.2f} MB")
+            
+            # Update maximums
+            max_cpu_percentage = max(max_cpu_percentage, cpu_percentage)
+            max_memory_usage = max(max_memory_usage, mem_usage)
+
+        await asyncio.sleep(1)
+        container.reload()
+
+    #container = client.inspect_container(container_name)
+    #start_time_object = datetime.datetime.fromisoformat(container['State']['StartedAt'])
+    #end_time_object = datetime.datetime.fromisoformat(container['State']['FinishedAt'])
+
+    start_time_object = datetime.datetime.fromisoformat(container.attrs['State']['StartedAt'])
+    end_time_object = datetime.datetime.fromisoformat(container.attrs['State']['FinishedAt'])
+    start_time_unix = datetime.datetime.timestamp(start_time_object)
+    end_time_unix = datetime.datetime.timestamp(end_time_object)
+    run_time = end_time_unix - start_time_unix
+
+    avg_cpu_usage = total_cpu_usage / total_time if total_time > 0 else 0
+    
+    if round2int:
+        max_cpu_percentage = int(max_cpu_percentage)
+        avg_cpu_usage = int(avg_cpu_usage)
+        max_memory_usage = int(max_memory_usage)
+        run_time = int(run_time)
+        # time_s = round(time_s, 2)
+
+    return {
+        "max_cpu_percentage": max_cpu_percentage,
+        "avg_cpu_usage": avg_cpu_usage,
+        "max_ram_usage": max_memory_usage,
+        "run_time": run_time
+    }
+
+async def run_and_monitor_container(task):
+    client = docker.from_env()
+
+    try:
+        container = client.containers.get(task["container_name"])
+        #if container.status == "running":
+        #    container.stop()
+        container.remove(force=True)
+    except:
+        pass
+    
+
+    try:
+        #print(f"Starting container with image: {image_name}")
+        container = client.containers.run(
+            task["image"], 
+            task["command"],
+            name = task["container_name"],
+            working_dir = task["working_dir"],
+            volumes = task["volumes"],
+            detach=True,
+            #tty=True,
+            #stdin_open=True,
+            )
+        # Monitor the container asynchronously
+        container_stats = await monitor_container(container)
+        task.update(container_stats)
+
+        # Stop and clean up the container after monitoring
+        #container.remove()
+        #print(f"Container {container.name} removed.")
+        return task
+
+    except docker.errors.DockerException as e:
+        print(f"Error: {e}")
+
+
+
+async def limited_container_runner(tasks, limit):
+    """
+    Run multiple Docker containers with a limit on concurrent executions.
+    """
+    semaphore = asyncio.Semaphore(limit)
+    results = []
+    total_tasks = len(tasks)
+    async def limited_task(index, task):
+        async with semaphore:
+            print(f"Task {index + 1}/{total_tasks} started ...")
+            print(generate_docker_run_command(task))
+            if not os.path.isfile(task["task_stat_file"]):
+                result = await run_and_monitor_container(task)
+                results.append(result)
+                # if result and "total_time" in result and result["total_time"]:
+                filename = "{}/{}.json".format(cnfdict["results_folder"], task["task_id"])
+                print("Task {} finished, writing results to {} ".format(task["task_id"],filename))
+                try:
+                    pd.DataFrame.from_records(result).to_json(filename, orient='records' )
+                except:
+                    print("⚠️ Some problem happened during writing, but execution will continue...")
+            else:
+                print("⚠️ Task {} was already done, skipping....".format(task["task_stat_file"]))
+
+    await asyncio.gather(*(limited_task(index, task) for index, task in enumerate(tasks)))
+    return results
+
+async def main(docker_tasks):
+    result = await limited_container_runner(docker_tasks, MAX_CONCURRENT_CONTAINERS)
+    return result
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Script to test quality and perfomance of popular neural networks for background removal')
+
+    parser.add_argument('-d', '--dryrun',
+        action='store_true',
+        help='Just print all run commands line-by-line')
+
+    parser.add_argument('-v', '--verbose',
+        action='store_true',
+        help='Be more verbose in output')
+
+    parser.add_argument('-i', '--input',
+        default='img-samples-1',
+        help='TBD. Input folder or file. Overrides "samples_folder" conf.yaml value')
+
+    parser.add_argument('-o', '--output',
+        default='result',
+        help='TBD. Output folder or file. Overrides "results_folder" conf.yaml value')
+
+    # TODO: add code from models_stat.py and visualize_results.py
+
+    args = parser.parse_args()
+    print(args)
+    
+    # TODO: pass args.input and args.output
+
+    docker_tasks = get_docker_tasks()
+    # print(docker_tasks)
+    print("Tasks to run : ", json.dumps(docker_tasks, indent=4))
+
+    if args.dryrun:
+        sys.exit("Script started in dryrun mode, exiting")
+    
+    result = asyncio.run(main(docker_tasks)) # can be [None] in case of error
+
+    if args.verbose:
+        print("Execution results : ", json.dumps(docker_tasks, indent=4))
+
+    df = pd.DataFrame.from_records(result)
+
+    if df.isna().all().all():
+        sys.exit("⚠️ No results to write, seems like all tasks was done previously")
+        # All intermediate results are also stored (see code in `limited_task` func)
+    
+    # TODO: build html from results/*.json files
+
+    df.to_json('result.json', orient='records')
+    df = df[["project_id", "model_id", "github", "pypi", "image", "image_size_mb", 
+             "max_cpu_percentage", "avg_cpu_usage", "max_ram_usage", "run_time"]]
+    df.to_html('result.html')
+
+    df.to_html('result_rich.html', render_links=False, escape=False, formatters={
+        'github': lambda x: f'<a href="https://github.com/{x}"><img src="assets/github_icon.png"></a>',
+        'pypi': lambda x: f'<a href="https://pypi.org/project/{x}"><img src="assets/python_favicon.png"></a>',
+        'image': lambda x: f'{x} <a href="https://hub.docker.com/r/{x}"><img src="assets/docker_icon.png"></a>'
+    })

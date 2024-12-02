@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+ul {
+    display: block;
+    clear: both;
+    margin-bottom: 20px;
+}
+
+li {
+    display: block;
+    float: left;
+    margin-bottom: 10px;
+}
+</style>
+</head>
+<body>
+
+<div id="pics_labelling">
+{% block labelling %}
+  {% for pic in pics %}
+    <ul>
+    <li>
+        <figure>
+            <a href="{{ pic.original }}"><img src="{{ pic.original }}" height="100"></a>
+            <figcaption>original</figcaption>
+        </figure>
+    </li>
+    {% for pic_nn in pic.nn_results %}
+        <li>
+            <figure>
+                <a href="{{ pic_nn.file }}"><img src="{{ pic_nn.file }}" height="100" alt="{{ pic_nn.label }}"></a>
+                <figcaption><input type="checkbox" name="{{ pic.stem }}" value="{{ pic_nn.label }}"> {{ pic_nn.label }}</figcaption>
+            </figure>
+        </li>
+    {% endfor %}
+    </ul>
+  {% endfor %}
+{% endblock %}
+</div>
+
+<div id="perfomance_metrics">
+{% include "result_rich.html" %}
+</div>
+
+</body>
+</html>
