@@ -9,3 +9,7 @@ RUN python3 -c "from carvekit.ml.files.models_loc import download_all; download_
 
 # Also you can debug actions using
 # python3 -m pdb -m carvekit
+COPY ./f2f /usr/local/bin/f2f
+RUN chmod +x /usr/local/bin/f2f
+ENV F2F_IN_FOLDER_ARGV -i
+ENV F2F_OUT_FOLDER_ARGV -o

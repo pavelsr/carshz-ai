@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+# Script to get print all docker logs
+# Common codebase wuth models_stat
+
+import json
+import docker
+import oyaml as yaml
+
+cnf_file = "conf.yaml"
+
+
+def print_container_logs(container_name, delete_after=True):
+    """
+    Prints the logs of a Docker container with the specified name.
+
+    :param container_name: The name of the Docker container.
+    """
+    try:
+        # Initialize Docker client
+        client = docker.from_env()
+
+        # Get the container by name
+        container = client.containers.get(container_name)
+
+        # Fetch and print logs
+        logs = container.logs(stream=True)  # Use stream=True to get logs as they come
+        for line in logs:
+            print(line.decode('utf-8').strip())
+
+        # Remove container after printing logs
+        if delete_after:
+            container.remove(force=True)
+
+    except docker.errors.NotFound:
+        print(f"Error: Container with name '{container_name}' not found.")
+    except docker.errors.APIError as e:
+        print(f"Error: Docker API error - {e}")
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+    
+
+def process_dict(input_dict, separator="_"):
+    """
+    Process a dictionary to create a list of concatenated key-value strings.
+
+    Usefule to get container names
+
+    :param input_dict: Dictionary where each key maps to a list of strings.
+    :param separator: Separator to use between keys and values.
+    :return: List of concatenated strings.
+
+    # Example usage
+    input_dict = {
+        "foo": ["abc", "xyz"],
+        "bar": ["def"],
+    }
+
+    # Output: ['foo_abc', 'foo_xyz', 'bar_def']
+    """
+    result = []
+    for key, values in input_dict.items():
+        for value in values:
+            result.append(f"{key}{separator}{value}")
+    return result
+
+
+with open(cnf_file) as stream:
+    cnfdict = yaml.safe_load(stream)
+    projects = cnfdict["projects"]
+    stat = {}
+    for proj_id, project in projects.items():
+        stat[proj_id] = project["models"]
+    stat = process_dict(stat)
+    print(stat)
+
+    for container_name in stat:
+        print("ℹ️ LOGS OF CONTAINER NAME : {}".format(container_name))
+        print_container_logs(container_name, delete_after=True)
+
+
+# docker logs support only one argument, so `docker logs <container1> <container2> is not possible`

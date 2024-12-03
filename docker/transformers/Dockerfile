@@ -5,3 +5,5 @@ RUN pip install transformers
 # for Birefnet
 RUN pip install timm kornia
 
+COPY ./f2f /usr/local/bin/f2f
+RUN chmod +x /usr/local/bin/f2f

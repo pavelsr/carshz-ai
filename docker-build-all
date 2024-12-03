@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+
+# Copy f2f to each docker image and run all docker builds
+
+SOURCE_FILE="f2f"
+TARGET_FOLDER="docker"
+DOCKERFILE="Dockerfile"
+LINE1="COPY ./f2f /usr/local/bin/f2f"
+LINE2="RUN chmod +x /usr/local/bin/f2f"
+
+# Check if the source file exists
+if [ ! -f "$SOURCE_FILE" ]; then
+  echo "Error: Source file '$SOURCE_FILE' does not exist."
+  exit 1
+fi
+
+# Check if the target folder exists
+if [ ! -d "$TARGET_FOLDER" ]; then
+  echo "Error: Target folder '$TARGET_FOLDER' does not exist."
+  exit 1
+fi
+
+# Function to check if a line exists in the Dockerfile
+line_exists() {
+  grep -Fxq "$1" "$DOCKERFILE"
+}
+
+# Iterate over all subdirectories in the target folder
+find "$TARGET_FOLDER" -mindepth 1 -maxdepth 1 -type d | while read -r subdir; do
+  cp "$SOURCE_FILE" "$subdir"
+  echo "Copied '$SOURCE_FILE' to '$subdir'"
+  # run docker build (default tag is taken from first string)
+  cd "$subdir"
+
+  # Add LINE1 if it doesn't exist
+  if ! line_exists "$LINE1"; then
+    echo "$LINE1" >>"$DOCKERFILE"
+    echo "Added: $LINE1"
+  fi
+
+  if ! line_exists "$LINE2"; then
+    echo "$LINE2" >>"$DOCKERFILE"
+    echo "Added: $LINE2"
+  fi
+
+  build_command=$(head -n 1 "$DOCKERFILE")
+  build_command=$(echo "$build_command" | sed 's/^# *//')
+  echo ${build_command}
+  $build_command
+  cd -
+done
+
+echo "Done."

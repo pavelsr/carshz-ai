@@ -68,12 +68,11 @@ def get_docker_tasks():
                         
                         # Create subfolder in results if it not exists
                         # {results_folder}/{proj_id}/{model_id}
-                        results_subfolder = "{results_folder}/{proj_id}/{model_id}".format(
+                        results_folder = "{results_folder}/{proj_id}/{model_id}".format(
                             results_folder = cnfdict["results_folder"],
                             proj_id = proj_id,
                             model_id = model_id
                         )
-                        os.makedirs(results_subfolder, exist_ok=True)
 
                         container_name = "{}_{}".format(proj_id,model_id)
                         task = {
@@ -85,6 +84,7 @@ def get_docker_tasks():
                             "command": cmd,
                             "working_dir": cnfdict["wbdir"],
                             "volumes": { current_working_directory: {'bind': cnfdict["wbdir"], 'mode': 'rw'}},
+                            "results_folder": results_folder,
                             "github": project["github"],
                             "pypi": project["pypi"]
                         }
@@ -229,6 +229,7 @@ async def limited_container_runner(tasks, limit):
     async def limited_task(index, task):
         async with semaphore:
             print(f"Task {index + 1}/{total_tasks} started ...")
+            os.makedirs(task["results_folder"], exist_ok=True)
             print(generate_docker_run_command(task))
             if not os.path.isfile(task["task_stat_file"]):
                 result = await run_and_monitor_container(task)

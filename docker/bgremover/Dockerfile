@@ -40,3 +40,7 @@ RUN pip install Flask
 CMD python -m backgroundremover.cmd.server
 HEALTHCHECK --start-period=90s CMD curl http://127.0.0.1:5000/ || exit 1
 EXPOSE 5000
+COPY ./f2f /usr/local/bin/f2f
+RUN chmod +x /usr/local/bin/f2f
+ENV F2F_IN_FOLDER_ARGV -i
+ENV F2F_OUT_FOLDER_ARGV -o

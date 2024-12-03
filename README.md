@@ -1,12 +1,12 @@
 # Description
 
-This is repository with code for quick testing of image processing neural networks
+This is repository with code for quick testing of image processing neural networks (from 🇷🇺 🇯🇵 🇰🇷 🇧🇷 🇲🇽)
 
 See `conf.yaml` for list of all tested networks
 
 In `docker` folder there is source files for docker images
 
-Raw results are in `results` folder, table data at `index.html`
+Raw results are in `results` folder by default, table data at `index.html`
 
 Approximate time to reproduce experiment: ~ 1h 30 min (with CPU-only)
 

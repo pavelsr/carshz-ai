@@ -15,3 +15,8 @@ ENV AILIA_MODELS_PATH=/opt/ailia-models
 ENV AILIA_TASK_ID=background_removal
 
 # INFO cascade_psp.py (388) : This model requires 10GB or more memory
+
+COPY ./f2f /usr/local/bin/f2f
+RUN chmod +x /usr/local/bin/f2f
+ENV F2F_IN_FOLDER_ARGV --input
+ENV F2F_OUT_FOLDER_ARGV --savepath

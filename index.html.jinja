@@ -24,13 +24,13 @@ li {
     <li>
         <figure>
             <a href="{{ pic.original }}"><img src="{{ pic.original }}" height="100"></a>
-            <figcaption>original</figcaption>
+            <figcaption>original ({{ pic.stem }})</figcaption>
         </figure>
     </li>
     {% for pic_nn in pic.nn_results %}
         <li>
             <figure>
-                <a href="{{ pic_nn.file }}"><img src="{{ pic_nn.file }}" height="100" alt="{{ pic_nn.label }}"></a>
+                <a href="{{ pic_nn.img_full }}"><img src="{{ pic_nn.img_preview }}" height="100" alt="{{ pic_nn.label }}"></a>
                 <figcaption><input type="checkbox" name="{{ pic.stem }}" value="{{ pic_nn.label }}"> {{ pic_nn.label }}</figcaption>
             </figure>
         </li>
