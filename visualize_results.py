@@ -14,7 +14,8 @@ from pathlib import Path
 samples_path = 'img-samples-2'
 results_path = 'results02'
 s3_bucket_base = 'https://pub-7feff4ad9d804732bd5bf81661f02078.r2.dev'
-thumbor_url = 'http://62.60.187.30/unsafe/0x100'
+# thumbor_url = 'http://62.60.187.30/unsafe/0x100'
+thumbor_url = 'https://kemerovo.thumbor.linsec.dev/unsafe/0x100'
 tmpl_file = 'index.html.jinja'
 out_file = 'index.html'
 use_s3 = True
