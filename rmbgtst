@@ -451,7 +451,11 @@ if __name__ == "__main__":
         env = Environment(loader=FileSystemLoader(template_path))
         template = env.get_template('index.html.jinja')
         # rendered_output = template.render(pics=result, perfomance_metrics=perfomance_metrics_html)
-        rendered_output = template.render(result=result, perfomance_metrics=perfomance_metrics_html)
+        rendered_output = template.render(
+            result=result, 
+            perfomance_metrics=perfomance_metrics_html,
+            max_containers_run=MAX_CONCURRENT_CONTAINERS
+            )
 
         if args.dryrun:
             #print(rendered_output)

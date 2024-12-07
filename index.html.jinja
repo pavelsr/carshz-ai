@@ -14,13 +14,21 @@ li {
     margin-bottom: 10px;
 }
 </style>
+<link rel="stylesheet" href="assets/theme.default.min.css">
+<link rel="stylesheet" href="assets/jquery.tablesorter.pager.min.css">
 
 <script src="assets/jquery.min.js"></script>
 <script src="assets/jquery.tablesorter.min.js"></script>
 <script src="assets/jquery.lazyload.min.js"></script>
+<script src="assets/jquery.tablesorter.pager.min.js"></script>
 <script>
 $(function() {
-  $(".tablesorter").tablesorter();
+  $(".tablesorter").tablesorter({ widgets: ['zebra'] })
+  $("#results_media").tablesorterPager({
+    container: $("#pager"), 
+    size: 3, 
+    output: "{startRow} to {endRow} of {totalRows} rows",
+    });
   $("img.lazyload").lazyload();
 });
 </script>
@@ -28,33 +36,58 @@ $(function() {
 <body>
 
 <div id="pics_labelling">
-<h1>Neural processing network results</h1>
-<table>
-{% block labelling %}
-  {% for r in result %}
-    <tr>
-    {% for pic_nn in r %}
-        <td>
-            <figure>
-                {% if pic_nn.is_original %}
-                    <a href="{{ pic_nn.file }}"><img src="{{ pic_nn.file }}" height="100" alt="{{ pic_nn.label }}" class="lazyload" data-src="{{ pic_nn.img_preview }}" data-original="{{ pic_nn.img_preview }}"></a>
-                    <figcaption>{{ pic_nn.label }} {{ pic_nn.stem }}</figcaption>
-                {% else %}
-                    <a href="{{ pic_nn.img_full_s3 }}"><img src="{{ pic_nn.img_preview }}" height="100" alt="{{ pic_nn.label }} class="lazyload" data-src="{{ pic_nn.img_preview }}" data-original="{{ pic_nn.img_preview }}"></a>
-                    <figcaption><input type="checkbox" name="{{ pic_nn.stem }}" value="{{ pic_nn.label }}"> {{ pic_nn.label }}</figcaption>
-                {% endif %}
-            </figure>
-        </td>
-    {% endfor %}
-    </tr>
-  {% endfor %}
-{% endblock %}
-<table>
+    <h1>Neural network processing results</h1>
+    {% block labelling %}
+    <table class="tablesorter" id="results_media">
+        <thead>
+            <tr>
+            <th scope="col">Results per image</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for r in result %}
+            <tr>
+            {% for pic_nn in r %}
+                <td>
+                    <figure>
+                        {% if pic_nn.is_original %}
+                            <a href="{{ pic_nn.file }}"><img src="{{ pic_nn.file }}" height="100" alt="{{ pic_nn.label }}" class="lazyload" data-src="{{ pic_nn.img_preview }}" data-original="{{ pic_nn.img_preview }}"></a>
+                            <figcaption>{{ pic_nn.label }} {{ pic_nn.stem }}</figcaption>
+                        {% else %}
+                            <a href="{{ pic_nn.img_full_s3 }}"><img src="{{ pic_nn.img_preview }}" height="100" alt="{{ pic_nn.label }} class="lazyload" data-src="{{ pic_nn.img_preview }}" data-original="{{ pic_nn.img_preview }}"></a>
+                            <figcaption><input type="checkbox" name="{{ pic_nn.stem }}" value="{{ pic_nn.label }}"> {{ pic_nn.label }}</figcaption>
+                        {% endif %}
+                    </figure>
+                </td>
+            {% endfor %}
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endblock %}
+    <div id="pager">
+        <button class="prev">Previous</button>
+        <button class="next">Next</button>
+        <!-- <select class="pagesize">
+            <option value="10">3</option>
+            <option value="20">4</option>
+            <option value="30">5</option>
+            <option value="40">10</option>
+        </select> -->
+        <span class="pagedisplay" data-pager-output-filtered="{startRow:input} &ndash; {endRow} / {filteredRows} of {totalRows} total rows"></span>
+    </div>
 </div>
 
 <div id="perfomance_metrics">
     {% block metrics %}
-        <h1>Pefomance metrics</h1>
+        <h1>Perfomance metrics</h1>
+        <p>
+            <b>Test configuration:</b><br>
+            CPU-only (noGPU)
+            20x Intel(R) Xeon(R) CPU E5-2660 v2 @ 2.20GHz<br>
+            16GB RAM
+            MAX_CONCURRENT_CONTAINERS = {{ max_containers_run }}
+        </p>
         {{ perfomance_metrics }}
         <button name="button" onclick="recalculate_scores();">Recalculate scores</button>
     {% endblock %}
