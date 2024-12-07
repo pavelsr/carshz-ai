@@ -1,0 +1,75 @@
+samples_folder: img-samples-2
+results_folder: results02
+wbdir: /tst
+base_run_cmd: "docker run -it -v ${PWD}:/tst -w /tst"
+base_exec_cmd: "docker exec {project_id}"
+projects:
+
+  rembg:
+    github: pavelsr/rembg
+    pypi: rembg
+    image: pavelsr/rembg
+    image_gpu: 
+    cmd: f2f rembg p {samples_folder} {results_folder}/{proj_id}/{model_id} -m {model_id}
+    comment: 🇧🇷, does not save subfolder structure
+    models:
+      - u2net
+      - u2netp
+      - silueta
+      - isnet-general-use
+      - irefnet-general
+      - birefnet-general-lite
+      - birefnet-dis
+      - birefnet-hrsod
+      - birefnet-cod
+      - birefnet-massive
+  
+  bgremover:
+    github: nadermx/backgroundremover
+    pypi: backgroundremover
+    image: pavelsr/bgremover
+    image_gpu: 
+    cmd: f2f backgroundremover -i {samples_folder} -o {results_folder}/{proj_id}/{model_id} -m {model_id}
+    comment: 🇲🇽
+    models:
+      - u2net
+      - u2netp
+  
+  trbg:
+    github: plemeri/transparent-background
+    pypi: transparent-background
+    image: pavelsr/trbg
+    image_gpu:
+    cmd: f2f transparent-background -s {samples_folder} -d {results_folder}/{proj_id}/{model_id}
+    comment: 🇰🇷
+    models:
+      - inspyrenet
+
+  carvekit:
+    github: OPHoperHPO/image-background-remove-tool
+    pypi: carvekit
+    image: pavelsr/carvekit
+    image_gpu:
+    cmd: f2f carvekit -i {samples_folder} -o {results_folder}/{proj_id}/{model_id} --net {model_id}
+    comment: "🇷🇺, Web API"
+    models:
+      - tracer_b7
+      - u2net
+      - basnet
+      - deeplabv3
+    
+  ailia:
+    github: axinc-ai/ailia-models?tab=readme-ov-file#background-removal
+    pypi: ailia
+    image: pavelsr/ailia:cpu-full
+    image_gpu:
+    cmd: f2f ailia-task --task background_removal --input {samples_folder} --savepath {results_folder}/{proj_id}/{model_id} -m {model_id}
+    comment: "🇯🇵, ready scripts"
+    models:
+      - dis_seg
+      - gfm
+      - modnet
+      - rembg
+      - u2net
+      - u2net-human-seg
+      - u2net-portrait-matting

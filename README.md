@@ -1,3 +1,19 @@
+```
+$ ./rmbgtst --help
+usage: rmbgtst [-h] [-d] [-v] [-t] [-p] [-i INPUT] [-o OUTPUT]
+
+Script to test quality and perfomance of popular neural networks for background removal
+
+options:
+  -h, --help           show this help message and exit
+  -d, --dryrun         Just print all run commands line-by-line
+  -v, --verbose        Be more verbose in output
+  -t, --test           Test on only one result
+  -p, --publish        Just merge and publish results (generate index.html)
+  -i, --input INPUT    TBD. Input folder or file. Overrides "samples_folder" conf.yaml value
+  -o, --output OUTPUT  TBD. Output folder or file. Overrides "results_folder" conf.yaml value
+```
+
 # Description
 
 This is repository with code for quick testing of image processing neural networks (from 🇷🇺 🇯🇵 🇰🇷 🇧🇷 🇲🇽)

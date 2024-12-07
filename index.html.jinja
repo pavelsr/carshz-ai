@@ -14,34 +14,50 @@ li {
     margin-bottom: 10px;
 }
 </style>
+
+<script src="assets/jquery.min.js"></script>
+<script src="assets/jquery.tablesorter.min.js"></script>
+<script src="assets/jquery.lazyload.min.js"></script>
+<script>
+$(function() {
+  $(".tablesorter").tablesorter();
+  $("img.lazyload").lazyload();
+});
+</script>
 </head>
 <body>
 
 <div id="pics_labelling">
+<h1>Neural processing network results</h1>
+<table>
 {% block labelling %}
-  {% for pic in pics %}
-    <ul>
-    <li>
-        <figure>
-            <a href="{{ pic.original }}"><img src="{{ pic.original }}" height="100"></a>
-            <figcaption>original ({{ pic.stem }})</figcaption>
-        </figure>
-    </li>
-    {% for pic_nn in pic.nn_results %}
-        <li>
+  {% for r in result %}
+    <tr>
+    {% for pic_nn in r %}
+        <td>
             <figure>
-                <a href="{{ pic_nn.img_full }}"><img src="{{ pic_nn.img_preview }}" height="100" alt="{{ pic_nn.label }}"></a>
-                <figcaption><input type="checkbox" name="{{ pic.stem }}" value="{{ pic_nn.label }}"> {{ pic_nn.label }}</figcaption>
+                {% if pic_nn.is_original %}
+                    <a href="{{ pic_nn.file }}"><img src="{{ pic_nn.file }}" height="100" alt="{{ pic_nn.label }}" class="lazyload" data-src="{{ pic_nn.img_preview }}" data-original="{{ pic_nn.img_preview }}"></a>
+                    <figcaption>{{ pic_nn.label }} {{ pic_nn.stem }}</figcaption>
+                {% else %}
+                    <a href="{{ pic_nn.img_full_s3 }}"><img src="{{ pic_nn.img_preview }}" height="100" alt="{{ pic_nn.label }} class="lazyload" data-src="{{ pic_nn.img_preview }}" data-original="{{ pic_nn.img_preview }}"></a>
+                    <figcaption><input type="checkbox" name="{{ pic_nn.stem }}" value="{{ pic_nn.label }}"> {{ pic_nn.label }}</figcaption>
+                {% endif %}
             </figure>
-        </li>
+        </td>
     {% endfor %}
-    </ul>
+    </tr>
   {% endfor %}
 {% endblock %}
+<table>
 </div>
 
 <div id="perfomance_metrics">
-{% include "result_rich.html" %}
+    {% block metrics %}
+        <h1>Pefomance metrics</h1>
+        {{ perfomance_metrics }}
+        <button name="button" onclick="recalculate_scores();">Recalculate scores</button>
+    {% endblock %}
 </div>
 
 </body>

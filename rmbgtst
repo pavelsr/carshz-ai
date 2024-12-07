@@ -10,6 +10,8 @@ import datetime
 #import logging
 import pandas as pd
 import oyaml as yaml
+from pathlib import Path
+from jinja2 import Environment, FileSystemLoader
 
 '''
 Что это? Cкрипт для тестирования неросетей для удаления фона с фотографии
@@ -21,8 +23,35 @@ import oyaml as yaml
 
 #logging.basicConfig(level=logging.DEBUG)
 MAX_CONCURRENT_CONTAINERS = 2
-cnfdict = { "results_folder": "results" }
+
+printable_task_prms = [
+    "project_id", 
+    "model_id", 
+    "github", 
+    "pypi", 
+    "image", 
+    "image_size_mb",
+    "max_cpu_percentage",
+    "avg_cpu_usage",
+    "max_ram_usage",
+    "run_time"
+]
+
+current_working_directory = os.getcwd()
+cnfdict = {}
+
+with open("conf.yaml") as stream:
+    try:
+        cnfdict = yaml.safe_load(stream)
+    except yaml.YAMLError as exc:
+        print(exc)
+
+# cnfdict = { "results_folder": "results" }
 client = docker.from_env()
+
+s3_bucket_base = 'https://pub-7feff4ad9d804732bd5bf81661f02078.r2.dev'
+thumbor_url = 'https://kemerovo.thumbor.linsec.dev/unsafe/0x100'
+is_resfolder_bucket_root = True # set true if bucket root must be same as base_results_path
 
 # Build docker run command
 def generate_docker_run_command(config):
@@ -47,59 +76,53 @@ def generate_docker_run_command(config):
     return " ".join(shlex.quote(arg) for arg in command)
 
 
+def get_docker_tasks(cnfdict):
+    #print(json.dumps(cnfdict, indent=4))
+    projects = cnfdict["projects"]
+    result = []
+    for proj_id, project in projects.items():
+        if "models" in project and project["models"]:
+            for model_id in project["models"]:
+                cmd = project["cmd"].format(
+                    samples_folder = cnfdict["samples_folder"],
+                    results_folder = cnfdict["results_folder"],
+                    proj_id = proj_id,
+                    model_id = model_id 
+                    )
+                
+                # Create subfolder in results if it not exists
+                # {results_folder}/{proj_id}/{model_id}
+                results_folder = "{results_folder}/{proj_id}/{model_id}".format(
+                    results_folder = cnfdict["results_folder"],
+                    proj_id = proj_id,
+                    model_id = model_id
+                )
 
-def get_docker_tasks():
-    current_working_directory = os.getcwd()
-    with open("conf.yaml") as stream:
-        try:
-            cnfdict = yaml.safe_load(stream)
-            #print(json.dumps(cnfdict, indent=4))
-            projects = cnfdict["projects"]
-            result = []
-            for proj_id, project in projects.items():
-                if "models" in project and project["models"]:
-                    for model_id in project["models"]:
-                        cmd = project["cmd"].format(
-                            samples_folder = cnfdict["samples_folder"],
-                            results_folder = cnfdict["results_folder"],
-                            proj_id = proj_id,
-                            model_id = model_id 
-                            )
-                        
-                        # Create subfolder in results if it not exists
-                        # {results_folder}/{proj_id}/{model_id}
-                        results_folder = "{results_folder}/{proj_id}/{model_id}".format(
-                            results_folder = cnfdict["results_folder"],
-                            proj_id = proj_id,
-                            model_id = model_id
-                        )
+                container_name = "{}_{}".format(proj_id,model_id)
+                task = {
+                    "project_id": proj_id,
+                    "model_id": model_id,
+                    "task_id": "{}.{}".format(proj_id, model_id),
+                    "image": project["image"],
+                    "container_name": container_name,
+                    "command": cmd,
+                    "working_dir": cnfdict["wbdir"],
+                    "volumes": { current_working_directory: {'bind': cnfdict["wbdir"], 'mode': 'rw'}},
+                    "results_folder": results_folder,
+                    "github": project["github"],
+                    "pypi": project["pypi"]
+                }
 
-                        container_name = "{}_{}".format(proj_id,model_id)
-                        task = {
-                            "project_id": proj_id,
-                            "model_id": model_id,
-                            "task_id": "{}.{}".format(proj_id, model_id),
-                            "image": project["image"],
-                            "container_name": container_name,
-                            "command": cmd,
-                            "working_dir": cnfdict["wbdir"],
-                            "volumes": { current_working_directory: {'bind': cnfdict["wbdir"], 'mode': 'rw'}},
-                            "results_folder": results_folder,
-                            "github": project["github"],
-                            "pypi": project["pypi"]
-                        }
-                        task["task_stat_file"] = "{}/{}.json".format(cnfdict["results_folder"], task["task_id"])
-                        
-                        image_size_bytes = client.images.get(project["image"]).attrs['Size']
-                        task["image_size_mb"] = image_size_bytes / (1024 * 1024)
-                        task["image_size_mb"] = int(task["image_size_mb"])
+                task["stats_file"] = "{}/{}.json".format(cnfdict["results_folder"], task["task_id"])
+                
+                docker_image_size_bytes = client.images.get(project["image"]).attrs['Size']
+                task["image_size_mb"] = docker_image_size_bytes / (1024 * 1024)
+                task["image_size_mb"] = int(task["image_size_mb"])
 
-                        result.append(task)
-                else:
-                    print("⚠️ Project {} has no models to test".format(proj_id))
-            return result
-        except yaml.YAMLError as exc:
-            print(exc)
+                result.append(task)
+        else:
+            print("⚠️ Project {} has no models to test".format(proj_id))
+    return result
 
 
 async def monitor_container(container, verbose=True, round2int=True):
@@ -231,18 +254,16 @@ async def limited_container_runner(tasks, limit):
             print(f"Task {index + 1}/{total_tasks} started ...")
             os.makedirs(task["results_folder"], exist_ok=True)
             print(generate_docker_run_command(task))
-            if not os.path.isfile(task["task_stat_file"]):
+            if not os.path.isfile(task["stats_file"]):
                 result = await run_and_monitor_container(task)
                 results.append(result)
-                # if result and "total_time" in result and result["total_time"]:
-                filename = "{}/{}.json".format(cnfdict["results_folder"], task["task_id"])
-                print("Task {} finished, writing results to {} ".format(task["task_id"],filename))
+                print("Task {} finished, writing results to {} ".format(task["task_id"], task["stats_file"]))
                 try:
-                    pd.DataFrame.from_records(result).to_json(filename, orient='records' )
+                    pd.DataFrame.from_records(result).to_json(task["stats_file"], orient='records' )
                 except:
                     print("⚠️ Some problem happened during writing, but execution will continue...")
             else:
-                print("⚠️ Task {} was already done, skipping....".format(task["task_stat_file"]))
+                print("⚠️ Task {} was already done, skipping....".format(task["stats_file"]))
 
     await asyncio.gather(*(limited_task(index, task) for index, task in enumerate(tasks)))
     return results
@@ -262,25 +283,192 @@ if __name__ == "__main__":
     parser.add_argument('-v', '--verbose',
         action='store_true',
         help='Be more verbose in output')
+    
+    parser.add_argument('-t', '--test',
+        action='store_true',
+        help='Test on only one result')
+    
+    parser.add_argument('-p', '--publish',
+        action='store_true',
+        help='Just merge and publish results (generate index.html)')
 
     parser.add_argument('-i', '--input',
-        default='img-samples-1',
-        help='TBD. Input folder or file. Overrides "samples_folder" conf.yaml value')
+        default=cnfdict["samples_folder"],
+        help='Input folder or file. Overrides "samples_folder" conf.yaml value')
 
     parser.add_argument('-o', '--output',
-        default='result',
-        help='TBD. Output folder or file. Overrides "results_folder" conf.yaml value')
-
-    # TODO: add code from models_stat.py and visualize_results.py
+        default=cnfdict["results_folder"],
+        help='Output folder or file. Overrides "results_folder" conf.yaml value')
 
     args = parser.parse_args()
     print(args)
-    
-    # TODO: pass args.input and args.output
 
-    docker_tasks = get_docker_tasks()
-    # print(docker_tasks)
-    print("Tasks to run : ", json.dumps(docker_tasks, indent=4))
+    if args.input:
+        cnfdict["samples_folder"] = args.input
+    if args.output:
+        cnfdict["results_folder"] = args.output
+    
+
+    if args.publish:
+        print("Just publish")
+
+        def merge_json_files(input_directory):
+            merged_array = []
+            # Iterate over all json files in the input_directory
+            for filename in os.listdir(input_directory):
+                if filename.endswith('.json'):
+                    file_path = os.path.join(input_directory, filename)
+                    # Load the JSON file
+                    with open(file_path, 'r') as f:
+                        data = json.load(f)
+                        merged_array.append(data[0])  # Append the element to the array
+            return merged_array
+
+
+        def find_files_with_same_filename(root_dir, filename):
+            """
+            Recursively searches for files with a specific filename in a directory tree.
+            """
+            matches = []
+            for dirpath, _, filenames in os.walk(root_dir):
+                if filename in filenames:
+                    matches.append(os.path.join(dirpath, filename))
+            return matches
+        
+        
+        def get_all_media_files_recursively(directory, only_first_dir=False):
+            """
+            Recursively collects all files in the given directory.
+            """
+            file_list = []
+            for dirpath, _, filenames in os.walk(directory):
+                if only_first_dir and len(file_list) > 1:
+                    print("Test mode active, so results will not full")
+                    break
+                for filename in filenames:
+                    if not filename.endswith('.json'):
+                        file_list.append(os.path.join(dirpath, filename))
+            return file_list
+
+
+        def get_filelabel_dict(file_path, base_results_path=None, use_s3 = True):
+            """
+            Constructs a dictionary with file path and its relative label based on the root directory.
+             :file_path - full relative path to result image (ususally *.png)
+            :const_label - constant image part label
+            """
+
+            dir_path = os.path.dirname(file_path)
+            label = os.path.relpath(dir_path, start=base_results_path)
+
+            # For recursive 
+            if len(file_path.split(os.sep)) > 4:
+                label = os.path.join(*label.split(os.sep)[0:2]) 
+
+            x = {
+                "file": file_path,
+                "label": label
+            }
+
+            if use_s3:
+                if is_resfolder_bucket_root:
+                    file_path = Path(file_path).relative_to(base_results_path)
+                x['img_full_s3'] = "{}/{}".format(s3_bucket_base, file_path)
+                x['img_preview'] = "{}/{}".format(thumbor_url, x['img_full_s3'])
+
+            return x
+
+        def get_gh_pypi_docker_formatters():
+            return {
+                'github': lambda x: f'<a href="https://github.com/{x}"><img src="assets/github.png"></a>',
+                'pypi': lambda x: f'<a href="https://pypi.org/project/{x}"><img src="assets/python.png"></a>',
+                'image': lambda x: f'{x} <a href="https://hub.docker.com/r/{x}"><img src="assets/docker.png"></a>'
+            }
+
+        media_results_basepath = cnfdict["results_folder"]
+        
+        print("Result media directory: ", media_results_basepath)
+        
+        sample_files = get_all_media_files_recursively(media_results_basepath, only_first_dir=args.test)
+        print(f"Found {len(sample_files)} results media files.")
+
+        result = []
+        # Process each sample file
+        for sample in sample_files:
+            task_result = []
+            stem = Path(sample).stem
+
+            ### PROCESS ORIGINAL FILE (WILL BE FIRST EL)
+            original_meta = {
+                "file": sample,
+                "label": "original",
+                "is_original": True,
+                "stem": stem
+            }
+            # TODO: upload to s3 original files also
+            # original_meta['img_preview'] = "{}/{}".format(thumbor_url, original_meta['img_full_s3'])
+
+            task_result.append(original_meta)
+            ### END OF PROCESS ORIGINAL FILE
+
+            expected_filename = f"{stem}.png"
+            nn_res_files = find_files_with_same_filename(media_results_basepath, expected_filename)
+            
+            for nn_res_file in nn_res_files:
+                # get_filelabel_dict return dict with props: file, label, img_full_s3, img_preview
+                x = get_filelabel_dict(nn_res_file, base_results_path=media_results_basepath)
+                x["stem"] = stem
+                task_result.append(x)
+            
+            result.append(task_result)
+
+            # result.append({
+            #     "stem": stem,
+            #     "original": sample,
+            #     "nn_results": [get_filelabel_dict(f, base_results_path=media_results_basepath) for f in nn_res_files]
+            # })
+
+        if args.verbose:
+            print(json.dumps(result, indent=4))
+
+
+        # get perfomance metrics
+        perfomance_stats_list = merge_json_files(media_results_basepath)
+
+        df = pd.DataFrame.from_records(perfomance_stats_list)
+        if args.verbose:
+            print(df)
+
+        perfomance_metrics_html = df[printable_task_prms].to_html(
+            render_links=False,
+            escape=False, 
+            classes="tablesorter",
+            formatters=get_gh_pypi_docker_formatters()
+            )
+
+        # Render HTML using Jinja2
+        template_path = '.'
+        env = Environment(loader=FileSystemLoader(template_path))
+        template = env.get_template('index.html.jinja')
+        # rendered_output = template.render(pics=result, perfomance_metrics=perfomance_metrics_html)
+        rendered_output = template.render(result=result, perfomance_metrics=perfomance_metrics_html)
+
+        if args.dryrun:
+            #print(rendered_output)
+            sys.exit("Script started in dryrun mode, so no index.html generated")
+            sys.exit()
+    
+        output_file = 'index.html'
+        with open(output_file, 'w', encoding='utf-8') as file:
+            file.write(rendered_output)
+        print(f"Rendered output saved to {output_file}")
+
+        sys.exit()
+
+    docker_tasks = get_docker_tasks(cnfdict)
+    
+    if args.verbose:
+        print("Tasks to run : ", json.dumps(docker_tasks, indent=4))
 
     if args.dryrun:
         sys.exit("Script started in dryrun mode, exiting")
@@ -291,20 +479,12 @@ if __name__ == "__main__":
         print("Execution results : ", json.dumps(docker_tasks, indent=4))
 
     df = pd.DataFrame.from_records(result)
-
     if df.isna().all().all():
         sys.exit("⚠️ No results to write, seems like all tasks was done previously")
         # All intermediate results are also stored (see code in `limited_task` func)
-    
-    # TODO: build html from results/*.json files
 
-    df.to_json('result.json', orient='records')
-    df = df[["project_id", "model_id", "github", "pypi", "image", "image_size_mb", 
-             "max_cpu_percentage", "avg_cpu_usage", "max_ram_usage", "run_time"]]
-    df.to_html('result.html')
-
-    df.to_html('result_rich.html', render_links=False, escape=False, formatters={
-        'github': lambda x: f'<a href="https://github.com/{x}"><img src="assets/github_icon.png"></a>',
-        'pypi': lambda x: f'<a href="https://pypi.org/project/{x}"><img src="assets/python_favicon.png"></a>',
-        'image': lambda x: f'{x} <a href="https://hub.docker.com/r/{x}"><img src="assets/docker_icon.png"></a>'
-    })
+    if args.verbose:
+        df.to_json('last_result.json', orient='records')
+        df = df[printable_task_prms]
+        df.to_html('last_result.html')
+        df.to_html('last_result_rich.html', render_links=False, escape=False, formatters=get_gh_pypi_docker_formatters())

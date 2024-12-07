@@ -1,0 +1,94 @@
+samples_folder: img-samples-1
+results_folder: results
+wbdir: /tst
+base_run_cmd: "docker run -it -v ${PWD}:/tst -w /tst"
+base_exec_cmd: "docker exec {project_id}"
+projects:
+
+  rembg:
+    github: danielgatis/rembg
+    pypi: rembg
+    image: danielgatis/rembg
+    image_gpu: 
+    cmd: p {samples_folder} {results_folder}/{proj_id}/{model_id} -m {model_id}
+    comment: 🇧🇷
+    models:
+      - u2net
+      - u2netp
+      #!- u2net_human_seg
+      #!- nu2net_cloth_seg
+      - silueta
+      - isnet-general-use
+      #!- isnet-anime
+      - sam
+      - irefnet-general
+      - birefnet-general-lite
+      #!- birefnet-portrait
+      - birefnet-dis
+      - birefnet-hrsod
+      - birefnet-cod
+      - birefnet-massive
+  
+  bgremover:
+    github: nadermx/backgroundremover
+    pypi: backgroundremover
+    image: pavelsr/bgremover
+    image_gpu: 
+    cmd: backgroundremover -i {samples_folder} -o {results_folder}/{proj_id}/{model_id} -m {model_id}
+    comment: 🇲🇽
+    models:
+      - u2net
+      - u2netp
+  
+  trbg:
+    github: plemeri/transparent-background
+    pypi: transparent-background
+    image: pavelsr/trbg
+    image_gpu:
+    #cmd: f2f transparent-background -s {samples_folder} -d {results_folder}/{proj_id}/{model_id} --ckpt {model_id}
+    #cmd: f2f transparent-background -s {samples_folder} -d {results_folder}/{proj_id}/{model_id} --jit
+    cmd: f2f transparent-background -s {samples_folder} -d {results_folder}/{proj_id}/{model_id}
+    comment: 🇰🇷
+    models:
+      - inspyrenet
+      #!- InSPyReNet_Res2Net50
+      #!- InSPyReNet_SwinB
+      #!- InSPyReNet_SwinB_DH_LR
+      #!- InSPyReNet_SwinB_HU_LR
+      #!- InSPyReNet_SwinB_HU_LR
+      #!- InSPyReNet_SwinB_DH
+      #!- InSPyReNet_SwinB_HU
+
+  carvekit:
+    github: OPHoperHPO/image-background-remove-tool
+    pypi: carvekit
+    image: pavelsr/carvekit
+    image_gpu:
+    # cmd: carvekit -i {samples_folder} -o {results_folder}/{proj_id}/{model_id} --net {model_id} --recursive --device cpu
+    cmd: carvekit -i {samples_folder} -o {results_folder}/{proj_id}/{model_id} --net {model_id}
+    comment: "🇷🇺, Web API"
+    models:
+      - tracer_b7
+      - u2net
+      - basnet
+      - deeplabv3
+    
+  ailia:
+    github: axinc-ai/ailia-models?tab=readme-ov-file#background-removal
+    pypi: ailia
+    image: pavelsr/ailia:cpu-full
+    image_gpu:
+    cmd: ailia-task --task background_removal --input {samples_folder} --savepath {results_folder}/{proj_id}/{model_id} -m {model_id}
+    comment: "🇯🇵, ready scripts"
+    models:
+      #- background_matting_v2 # require bgr.png
+      #- cascade_psp # trimap
+      #- deep-image-matting # require bgr.png
+      - dis_seg
+      - gfm
+      #- indexnet
+      - modnet
+      - rembg
+      - u2net
+      - u2net-human-seg
+      - u2net-portrait-matting

@@ -1,0 +1,4 @@
+https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js
+https://cdnjs.cloudflare.com/ajax/libs/jquery.tablesorter/2.32.0/js/jquery.tablesorter.min.js
+https://cdnjs.cloudflare.com/ajax/libs/jquery.tablesorter/2.32.0/css/theme.default.min.css
+https://cdnjs.cloudflare.com/ajax/libs/jquery_lazyload/1.9.6/jquery.lazyload.min.js
